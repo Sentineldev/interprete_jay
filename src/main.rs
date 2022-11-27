@@ -5,9 +5,8 @@ use std::process;
 use std::collections::HashMap;
 
 
-
-//Falta hacer la deteccion de errores
-//falta por hacer tabla de simbolos.
+//deteccion de errores implementada, pero aun falta los ifs,  whiles y elses.
+//tabla de simbolos construida.
 
 
 mod lexer;

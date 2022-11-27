@@ -1,6 +1,6 @@
 
 use crate::HashMap;
-
+use std::process;
 
 
 
@@ -246,6 +246,10 @@ impl<'a> Lexer<'_>{
                     builded_token.push(current);
                     check_next = true;
                 }   
+            }
+            else{
+                eprintln!("Linea {}: Error Lexico",current_line);
+                process::exit(0);
             }
         }
 

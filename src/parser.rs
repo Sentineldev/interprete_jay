@@ -91,10 +91,13 @@ impl<'a> Parser<'_>{
         Err(format!("Expresion invalida: {}",temporal_expression))
     }
     fn attach_to_expression(&mut self){
+
+        //Toma el primer elemento que se encuentre en el vector y lo agrega a la cadena de expresion.
         let item = self.consume().get_value().clone();
         self.current_expresion.push_str(format!("{} ",item).as_str());
     }
     fn clear_expression(&mut self){
+        //Limpia la expresion actual.
         self.current_expresion.clear();
     }
 
@@ -110,6 +113,9 @@ impl<'a> Parser<'_>{
             let mut v =  vec![];
             v.push(key);
             v.push(value);
+            if value.is_empty(){
+                continue; 
+            }
             builder.add_record(v);
         }
         
@@ -136,6 +142,8 @@ impl<'a> Parser<'_>{
 
 
     fn is_identifier(&mut self, identifier : &String) -> bool{
+        //verifica si una cadena es un identificador
+        //tambien verifica si no es una keyword.
         if self.is_of_type(&identifier,"KEYWORD"){ return false }
 
         let first_char = identifier.chars().next().unwrap().to_string();
@@ -152,6 +160,8 @@ impl<'a> Parser<'_>{
         false
     }
     fn is_of_type(&self,element : &String,type_of : &str) -> bool {
+
+        //Verifica si un elemento es de algun tipo definido en la gramatica.
         if let Some(result) = self.grammar_tokens.get(element.as_str()){
             if result.contains(type_of) { return true }
         }
@@ -161,12 +171,14 @@ impl<'a> Parser<'_>{
 
     
     fn update_line(&mut self){
+        //Actualiza a la linea a la que se encuentra el ultimo token.
         if let Some(element) = self.file_tokens.get(0){
             self.line_control = element.get_line();
         }
     }
 
     fn end_process(&self){
+        //Corta la ejecucion del programa y da como mensaje la ultima linea que leyo.
         eprintln!("Linea {}: Error de sintaxis",self.line_control);
         process::exit(0);
     }
