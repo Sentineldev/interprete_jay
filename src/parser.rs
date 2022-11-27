@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::process;
 
-
+use crate::lexer::Token;
 
 #[derive(Debug)]
 pub struct Parser<'a>{
@@ -14,20 +14,21 @@ pub struct Parser<'a>{
     //Ademas tambien receibe un vector con todos los tokens leidos en el archivo .jay
 
     pub grammar_tokens : HashMap<&'a str,&'a str>,
-    pub file_tokens  : Vec<String>
+    pub file_tokens  : Vec<Token>,
+    pub line_control : u32
 }
 
 
 
 impl<'a> Parser<'_>{
     
-    pub fn build(grammar_tokens: &HashMap<&'a str,&'a str>,file_tokens: &Vec<String>) -> Parser<'a>{
+    pub fn build(grammar_tokens: &HashMap<&'a str,&'a str>,file_tokens: &Vec<Token>) -> Parser<'a>{
 
         let gram = grammar_tokens.clone();
 
         let fil_tokens = file_tokens.clone();
 
-        Parser { grammar_tokens : gram, file_tokens: file_tokens.to_vec() }
+        Parser { grammar_tokens : gram, file_tokens: fil_tokens,line_control : 1 }
     }
 
     pub fn run(&mut self){
@@ -47,8 +48,8 @@ impl<'a> Parser<'_>{
 
     fn compare_to_top(&self,token : &str) -> bool{
         //Compara el token con lo que se encuentre al inicio del vector.
-        if self.file_tokens.get(0) == Some(&token.to_string()){
-            return true;
+        if let Some(value) = self.file_tokens.get(0){
+            return value.get_value().to_string() == token.to_string()
         }
         false
     }
@@ -81,53 +82,81 @@ impl<'a> Parser<'_>{
         }
         false
     }
-   
+    
+    fn update_line(&mut self){
+        if let Some(element) = self.file_tokens.get(0){
+            self.line_control = element.get_line();
+        }
+    }
+
+    fn end_process(&self){
+        eprintln!("Linea {}: Error de sintaxis",self.line_control);
+        process::exit(0);
+    }
 
     fn program(&mut self){
 
          //Verifica la regla de produccion de un programa
          //<Program> ::= void main() '{' <Declarations> <Statements> '}'
 
-        if self.compare_to_top("void"){
-            self.consume();
-            if self.compare_to_top("main"){
-                self.consume();
-                if self.compare_to_top("("){
-                    self.consume();
-                    if self.compare_to_top(")"){
-                        self.consume();
-                        if self.compare_to_top("{"){
-                            self.consume();
-                            while self.declarations() || self.statements(){
-                                continue;
-                            }
-                            if self.compare_to_top("}"){
-                                self.consume();
-                            }
+
+        if !self.compare_to_top("void"){
+            self.end_process();
+        }
+        self.update_line();
+        self.consume();
+        if !self.compare_to_top("main"){
+            self.end_process();
+        }
+
         
-                        }
-                    }
-                }
-                
-            }
-        }   
+        self.update_line();
+        self.consume();
+
+
+        if !self.compare_to_top("("){
+            self.end_process();
+        }
+        self.update_line();
+        self.consume();
+        if !self.compare_to_top(")"){
+            self.end_process();
+        }
+        self.update_line();
+        self.consume();
+        if !self.compare_to_top("{"){
+            self.end_process();
+        }
+        self.update_line();
+        self.consume();
+
+        self.declarations();
+        self.statements();
+
+        if !self.compare_to_top("}"){
+            self.end_process();
+        }
+        self.update_line();
+        self.consume();
+        println!("after declarations:");
+        for el in &self.file_tokens{
+            print!(" asd{} ",el.get_value());
+        }
+        println!(" ");
+
     }
+
+    
 
     fn declarations(&mut self) -> bool{
 
         //Verifica las declaraciones
         //formato en ebnf <Declarations> ::= < {<Declaration>}*
-        //self.declaration()
-        
-        if self.declaration(){
-            self.declarations();
-        }
-        else{
-            println!("{:?}",self.file_tokens);
-            return false;
-        }
 
-        true
+        if self.declaration(){
+            return self.declarations();
+        }
+        false
     }
 
     fn declaration(&mut self) -> bool{
@@ -136,20 +165,30 @@ impl<'a> Parser<'_>{
         //1. Verifica que el primer elemento en el vector de tokens sea un type
         //2. Verifica los identificadores  que siguen luego del tipo de declaracion
         //Formato <Declaration> ::= <Type> <Identifiers>';'
-        if self.declaration_type(){
-            println!("enter declaration...");
-            if self.identifiers(){
-                println!("identifiers devuelve true");
-                if self.compare_to_top(";"){
-                    self.consume();
-                    return true;
-                }
-            }
-            
+
+        if !self.declaration_type(){    
+            return false;
         }
+        if !self.identifiers(){
+            if let Some(element) = self.file_tokens.get(0){
+                eprintln!("Linea {} Error de sintaxis.",element.get_line());
+                process::exit(0);   
+    
+            }
+            return false;
+        }
+        if !self.compare_to_top(";"){
+            if let Some(element) = self.file_tokens.get(0){
+                eprintln!("Se esperaba ';'");
+                eprintln!("Linea {} Error de sintaxis.",element.get_line());
+                process::exit(0);   
+    
+            }
+            return false;
+        }
+        self.consume();
+        true
 
-
-        false
     }
 
     fn declaration_type(&mut self) -> bool{
@@ -157,15 +196,11 @@ impl<'a> Parser<'_>{
         //Verifica si el elemento en el vector contiene un 'INT' o 'Boolean'
         //Formato <Type> ::= int | boolean
 
-        println!("enter type...");
         if self.end_of_file() { return false }
-        if self.compare_to_top("int") { 
+
+        if self.compare_to_top("int") || self.compare_to_top("boolean") { 
             self.consume();
             return true
-        }
-        if self.compare_to_top("boolean") { 
-            self.consume();
-            return true 
         }
 
         false
@@ -174,21 +209,21 @@ impl<'a> Parser<'_>{
     fn identifiers(&mut self) -> bool{
         //Verifica que tenga forma de identificadores
         //Formato <Identifiers> ::= <Identifier> {','<identifier>}*
-        println!("enter identifiers...");
         if self.end_of_file() { return false }
-        if !self.identifier(){
-            return false;
+
+
+        if !self.identifier(){ return false; }
+
+        
+        self.consume();
+
+
+        if self.compare_to_top(","){
+            self.consume();
+            return self.identifiers();
         }
 
-        self.consume();
-        
-        while self.compare_to_top(","){
-            self.consume();
-            if !self.identifier(){
-                return false;
-            }
-            self.consume();
-        }
+
         true
 
     }
@@ -196,17 +231,17 @@ impl<'a> Parser<'_>{
         //Verifica que el identificador inicie con  una letra
         //y tenga una secuencia de letras y numero despues del primer caracter.
         //Formato <Identifier> ::= <Letter> | <Identifier> <Letter> | <Identifier> <Digit>
-        println!("enter identifier...");
         if self.end_of_file() { return false}
+
+
         if let Some(value) = self.file_tokens.get(0){
             
-            if self.is_keyword(&value){ 
-                println!("value: {value}");
-                return false }
+            if self.is_keyword(&value.get_value()){ 
+                return false 
+            }
 
-
-            if self.is_letter(value.chars().next().unwrap()){
-                let sliced_string = &value[1..];
+            if self.is_letter(value.get_value().chars().next().unwrap()){
+                let sliced_string = &value.get_value()[1..];
                 for chr in sliced_string.chars(){
                     if self.is_letter(chr) { continue }
                     else if self.is_digit(chr) { continue }
@@ -225,14 +260,13 @@ impl<'a> Parser<'_>{
     fn statements(&mut self) -> bool{
         //Inicia la verificacion de statement.
         //<Statements> ::= {<Statement>}*
+
         if self.statement(){
-            self.statements();
-        }
-        else{
-            return false;
+            return self.statements();
+            
         }
 
-        true
+        false
 
     }
     fn statement(&mut self) -> bool{
@@ -253,19 +287,23 @@ impl<'a> Parser<'_>{
         //entonces se trata de un bloque y verifica si hay statments dentro del bloque
         //debe encontrar un } para estar valido.
         //Formato <Block> ::= '{'<Statements>'}'
+
         if self.compare_to_top("{"){
             self.consume();
-            if self.statements() {
-                println!(" en block statement {:?}",self.file_tokens);
-                if self.compare_to_top("}"){ 
-                    println!(" en block statement clsoe bracket {:?}",self.file_tokens);
-                    self.consume();
-                    return true 
-                }
-            }
+        }
+        else { return false }
+
+
+
+        if self.statements() || self.compare_to_top("}") {
+            self.consume();
+
+            return true;
         }
 
+
         false
+
     }
 
     pub fn assignment(&mut self) -> bool{
@@ -274,18 +312,19 @@ impl<'a> Parser<'_>{
         //Que contengan el signo = que indica asignacion
         //y por ultimo verifica la expresion y concluya con ';'
         //Formato <Assignment> ::= <Identifier> '=' <Expression> ';'
+
         if self.identifier(){
             self.consume();
-            if self.compare_to_top("="){
-                self.consume();
-                if self.expression(){
-                    if self.compare_to_top(";"){
-                        self.consume();
-                        return true;
-                    }
-                    eprintln!("Error sintactico missing ';'");
-                }
-            }
+        } else { return false }
+
+        if self.compare_to_top("="){
+            self.consume();
+        } else { return false }
+
+
+        if self.expression() && self.compare_to_top(";"){
+            self.consume();
+            return true
         }
 
         false
@@ -296,29 +335,29 @@ impl<'a> Parser<'_>{
         //Formato EBNF <IfStatement> ::= if (<Expression>) <Statement> [else <Statement>]
 
         if self.compare_to_top("if"){
-            println!("consuming if.");
             self.consume();
-            if self.compare_to_top("("){
-                self.consume();
-                if self.expression(){
-                    if self.compare_to_top(")"){
-                        self.consume();
-                        if self.statement(){
-                            if self.compare_to_top("else"){
-                                self.consume();
-                                if self.statement(){
-                                    println!(" en if statement {:?}",self.file_tokens);
-                                    return true;
-                                }
-                                return false;
-                            }
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
+        } else { return false }
+        if self.compare_to_top("("){
+            self.consume();
+        }else { return false; }
+        if self.expression() && self.compare_to_top(")"){
+            self.consume();
+        } else { return false }
         
+        if self.statement(){
+
+            if self.compare_to_top("else"){
+                self.consume();
+                if self.statement(){ return true }
+                process::exit(0);
+            }
+
+            return true;
+        }
+
+        
+
+
 
         false
     }
@@ -327,21 +366,24 @@ impl<'a> Parser<'_>{
     pub fn while_statement(&mut self) -> bool {
         //Verifica si es un While
         //Formato EBNF <WhileStatement> ::= while (<Expression>) <Statement>
+
         if self.compare_to_top("while"){
             self.consume();
-            if self.compare_to_top("("){
-                self.consume();
-                if self.expression(){
-                    if self.compare_to_top(")"){
-                        self.consume();
-                        if self.statement(){
-                            return true;
-                        }
-                    }
-                }
-                
-            }
+        } else { return false }
+
+
+        if self.compare_to_top("("){
+            self.consume();
+        } else { return false }
+
+        if self.expression() && self.compare_to_top(")"){
+            self.consume();
+        } else { return false }
+
+        if self.statement(){
+            return true;
         }
+
         false 
     }
 
@@ -349,11 +391,12 @@ impl<'a> Parser<'_>{
     pub fn expression(&mut self) -> bool{
         //Verifica si es una expresion
         //Formato EBNF <Expression> ::= <Conjunction> {'||' <Conjunction> }*
+
+        //caso critico, si luego del OR no hay una conjunction es invalido y debe enviar un PANIC.
         if self.conjunction() {
-            while self.compare_to_top("||"){
+            if self.compare_to_top("||"){
                 self.consume();
-                if self.conjunction() { continue }
-                return false;
+                if !self.conjunction(){ return false }
             }
             return true;
         }
@@ -366,13 +409,10 @@ impl<'a> Parser<'_>{
         //Verifica la sintaxis de una relacion.
         //Formato EBNF <Conjunction> ::= <Relation> {'&&' <Relation>}*
         if self.relation(){
-            while self.compare_to_top("&&"){
+            if self.compare_to_top("&&"){
                 self.consume();
-                if self.relation() { continue }
-
-                return false;
+                if !self.relation() { return false }
             }
-
             return true;
         }
 
@@ -384,13 +424,11 @@ impl<'a> Parser<'_>{
         //Verifica la sintaxis de una addition
         //Formato EBNF <Relation> ::= <Addition> {['>','>=','==','!=','<','<='] <Addition>}*
         if self.addition(){
-            while self.compare_to_top(">") || self.compare_to_top(">=") || self.compare_to_top("==") ||
+            if self.compare_to_top(">") || self.compare_to_top(">=") || self.compare_to_top("==") ||
                 self.compare_to_top("!=")  || self.compare_to_top("<") || self.compare_to_top("<="){
                     self.consume();
-                    if self.addition() { continue }
-                    return false;
+                    if !self.addition() { return  false }
                 }
-
                 return true;
         }
 
@@ -403,10 +441,9 @@ impl<'a> Parser<'_>{
 
         //Formato <Addition> ::= <Term> {['+','-'] <Term>}*
         if self.term(){ 
-            while self.compare_to_top("+") || self.compare_to_top("-"){
+            if self.compare_to_top("+") || self.compare_to_top("-"){
                 self.consume();
-                if self.term() { continue }
-                return false;
+                if !self.term() { return false }
             }
             return true;
         }
@@ -418,10 +455,9 @@ impl<'a> Parser<'_>{
 
         //Formato EBNF <Term>::= <Negation> {['*','/'] <Negation>}*
         if self.negation(){
-            while self.compare_to_top("*") || self.compare_to_top("/"){
+            if self.compare_to_top("*") || self.compare_to_top("/"){
                 self.consume();
-                if self.negation() { continue }
-                return false;
+                if !self.negation() { return false }
             }
             return true;
         }
@@ -452,11 +488,9 @@ impl<'a> Parser<'_>{
         }
         else if self.compare_to_top("("){
             self.consume();
-            if self.expression(){
-                if self.compare_to_top(")"){
-                    self.consume();
-                    return true;
-                }
+            if self.expression() && self.compare_to_top(")"){
+                self.consume();
+                return true;
             }
         }
 
@@ -484,7 +518,7 @@ impl<'a> Parser<'_>{
         //Verifica si es un integer
         //Formato EBNF <Integer> ::= <Digit> | <Integer> <Digit>
         if let Some(value) = self.file_tokens.get(0){
-            for chr in value.chars(){
+            for chr in value.get_value().chars(){
                 if self.is_digit(chr) { continue }
                 return false;
             }
@@ -498,7 +532,9 @@ impl<'a> Parser<'_>{
 
     pub fn show(&self){
 
-        println!("{:?}",self.file_tokens);
+        for token in &self.file_tokens{
+            print!("{:?} ",token.get_value().to_string().as_str());
+        }
     }
     
 }

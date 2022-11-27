@@ -5,9 +5,8 @@ use std::process;
 use std::collections::HashMap;
 
 
-//Todo falta hacer la tabla de simbolos
 //Falta hacer la deteccion de errores
-//Crear una struct de tokens para tener en cuenta la linea en la que se encuentra.
+//falta por hacer tabla de simbolos.
 
 
 mod lexer;
@@ -42,8 +41,8 @@ fn generate_tokens() -> HashMap<&'static str,&'static str>{
         ("=","ASSIGN_OPERATOR"),("+","PLUS_OPERATOR"),("-","MINUS_OPERATOR"),
         ("*","MULT_OPERATOR"),("/","DIVISION_OPERATOR"),(">","GREATER_THAN_OPERATOR"),
         (">=","GREATER_OR_EQUAL_OPERATOR"),("==","EQUAL_OPERATOR"),("!=","DIFFERENT_OPERATOR"),
-        ("<","LESS_THAN_OPERATOR"),("<=","LESS_OR_EQUAL_OPERATOR"),("&&","AND_OPERATOR"),
-        ("||","OR_OPERATOR"),("!","NOT_OPERATOR"),("(","OPEN_PARENTHESIS_SEPARATOR"),
+        ("<","LESS_THAN_OPERATOR"),("<=","LESS_OR_EQUAL_OPERATOR"),("&&","AND_OPERATOR"),("&","AND_SOLO_OPERATOR"),
+        ("||","OR_OPERATOR"),("|","VERTICAL_LINE_OPERATOR"),("!","NOT_OPERATOR"),("(","OPEN_PARENTHESIS_SEPARATOR"),
         (")","CLOSE_PARENTHESIS_SEPARATOR"),("{","OPEN_BRACKET_SEPARATOR"),("}","CLOSE_BRACKET_SEPARATOR"),
         (";","SEMICOLON_SEPARATOR"),(",","COMMA_SEPARATOR"),
         ("false","FALSE_KEYWORD"),("true","TRUE_KEYWORD"),
@@ -91,7 +90,11 @@ fn read_file(file_content :  &String) -> Result<bool,String>{
     let lexer = lexer::Lexer::build(&tokens);
 
     if let Ok(value) = lexer.read_file_lines(&file_content){
-        println!("returned tokenized vector: {:?}",value);
+
+        for el in &value{
+            print!("{} ",el.get_value());
+        }
+        
         let mut parser = parser::Parser::build(&tokens,&value);
         parser.run();
         parser.show();
@@ -108,7 +111,7 @@ fn main() {
     match fs::read_to_string("ejercicio.jay"){
         Ok(content) => {
             if let Err(value) = read_file(&content){
-                //eprintln!("{value}");
+                eprintln!("{value}");
             }
             
         },

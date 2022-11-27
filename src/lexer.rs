@@ -6,6 +6,44 @@ use crate::HashMap;
 
 
 
+#[derive(Debug)]
+#[derive(Copy, Clone)]
+pub enum TokenType{
+    Identifier,
+    KeyWord,
+    Separator,
+    Operator
+}
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct Token{
+    pub value : String,
+    pub column : u32,
+    pub line : u32,
+    pub token_type : TokenType
+}
+
+impl Token{
+    pub fn build(token : &String,token_type : TokenType,current_line : u32) -> Token{
+
+        let new_token = token.clone();
+        Token {  value: new_token,token_type: token_type,line:current_line,column:0  }
+    }
+
+    pub fn get_value(&self) -> String{
+        self.value.clone()
+    }
+    pub fn get_line(&self) -> u32{
+        self.line
+    }
+}
+
+
+
+
+
+
+
 pub struct Lexer<'a>{
     pub grammar_tokens : HashMap<&'a str,&'a str>
 }
@@ -49,37 +87,43 @@ impl<'a> Lexer<'_>{
         false
     }
 
-    pub fn read_file_lines(&self,file_content : &String) -> Result<Vec<String>,String>{
+    pub fn read_file_lines(&self,file_content : &String) -> Result<Vec<Token>,String>{
 
         //Lee linea por linea y convierte en tokens los elementos que se encuentren en la linea.
         //Elimina los espacios atras y adelante de la linea.
         //Convierte la linea en un vector separado por espacios.
 
-        let mut tokenized_vector : Vec<String> = Vec::new();
+        let mut tokenized_vector : Vec<Token> = Vec::new();
+
+        let mut current_line : u32 =  1;
 
         for line in file_content.trim().lines(){
             if line.trim().starts_with("//") { continue }
             if line.trim().len() == 0 { continue }
+
             let splited_line : Vec<&str> = line.trim().split_whitespace().collect();
-            if let Ok(val) = self.scanner(&splited_line){
-                tokenized_vector.append(&mut val.clone());
+            if let Ok(mut val) = self.scanner(&splited_line,current_line){
+                tokenized_vector.append(&mut val);
             }
+
+            current_line+=1;
 
         }
 
         Ok(tokenized_vector)
     }
 
-    pub fn scanner(&self,vectorized_line : &Vec<&str>) -> Result<Vec<String>,String>{
+    pub fn scanner(&self,vectorized_line : &Vec<&str>,current_line : u32) -> Result<Vec<Token>,String>{
 
-        //Lee linea por linea y convierte en tokens los elementos que se encuentren en la linea.
-        //Elimina los espacios atras y adelante de la linea.
-        //Convierte la linea en un vector separado por espacios.
+        //Recibe una linea separado por espacios en un vector
+        //convierte cada elemento del vector en un token.
+
+        //Retorna un vector  de tokens.
 
         let mut tokenized_vector = Vec::new();
         for token in vectorized_line{
-            if let Ok(val) = self.tokenizer(token){
-                tokenized_vector.append(&mut val.clone());
+            if let Ok(mut val) = self.tokenizer(token,current_line){
+                tokenized_vector.append(&mut val);
                 continue;
             }
 
@@ -92,18 +136,26 @@ impl<'a> Lexer<'_>{
 
     }
 
-    fn tokenizer(&self,token : &str) -> Result<Vec<String>,String>{
+    fn tokenizer(&self,token : &str,current_line : u32) -> Result<Vec<Token>,String>{
         //Genera un vector con los tokens leidos.
 
         //En el primer caso verifica si es una palabra clave.
         //En el segundo recorre cada caracter de la cadena
         //arma los tokens y los va separando por medio de 'Separators'
         // o tambien operadores
-        let mut tokenized_vector  : Vec<String> = Vec::new(); 
+
+        let mut tokenized_vector_aux : Vec<Token> = Vec::new();
         
         if self.is_keyword(&token.to_string()){
-            tokenized_vector.push(token.to_string());
-            return Ok(tokenized_vector);
+
+
+            tokenized_vector_aux.push(Token::build(
+                &token.to_string(),
+                TokenType::KeyWord,
+                current_line
+            ));
+
+            return Ok(tokenized_vector_aux);
         }
 
         
@@ -118,21 +170,58 @@ impl<'a> Lexer<'_>{
             }
             else if self.is_letter_or_dig(current) && check_next{
                 check_next = false;
-                tokenized_vector.push(builded_token.clone());
+
+                tokenized_vector_aux.push(Token::build(
+                    &builded_token,
+                    TokenType::Operator,
+                    current_line
+                ));
+
                 builded_token.clear();
                 builded_token.push(current);
             }
             else if self.is_separator(current) && !check_next{
                 if !builded_token.is_empty(){
-                    tokenized_vector.push(builded_token.clone());
+
+                    if self.is_keyword(&builded_token){
+                        tokenized_vector_aux.push(Token::build(
+                            &builded_token,
+                            TokenType::KeyWord,
+                            current_line
+                        ));
+                    }
+                    else{
+                        tokenized_vector_aux.push(Token::build(
+                            &builded_token,
+                            TokenType::Identifier,
+                            current_line
+                        ));
+                    }
+                    
                     builded_token.clear();
                 }
-                tokenized_vector.push(current.to_string());
+                tokenized_vector_aux.push(Token::build(
+                    &current.to_string(),
+                    TokenType::Separator,
+                    current_line
+                ));
             }
             else if self.is_separator(current) && check_next{
-                tokenized_vector.push(builded_token.clone());
+                check_next = false;
+                
+                tokenized_vector_aux.push(Token::build(
+                    &builded_token,
+                    TokenType::Operator,
+                    current_line
+                ));
+
+                
                 builded_token.clear();
-                builded_token.push(current);
+                tokenized_vector_aux.push(Token::build(
+                    &current.to_string(),
+                    TokenType::Separator,
+                    current_line
+                ));
             }
             else if self.is_operator(current){
                 
@@ -141,9 +230,25 @@ impl<'a> Lexer<'_>{
                 }
                 else{
                     if !builded_token.is_empty(){
-                        tokenized_vector.push(builded_token.clone());
+                        
+                        if self.is_keyword(&builded_token){
+                            tokenized_vector_aux.push(Token::build(
+                                &builded_token,
+                                TokenType::KeyWord,
+                                current_line
+                            ));
+                        }
+                        else{
+                            tokenized_vector_aux.push(Token::build(
+                                &builded_token,
+                                TokenType::Identifier,
+                                current_line
+                            ));
+                        }
+
                         builded_token.clear();
                     }
+
                     builded_token.push(current);
                     check_next = true;
                 }   
@@ -151,9 +256,23 @@ impl<'a> Lexer<'_>{
         }
 
         if !builded_token.is_empty(){
-            tokenized_vector.push(builded_token);
+            if self.is_keyword(&builded_token){
+                tokenized_vector_aux.push(Token::build(
+                    &builded_token,
+                    TokenType::KeyWord,
+                    current_line
+                ));
+            }
+            else{
+                tokenized_vector_aux.push(Token::build(
+                    &builded_token,
+                    TokenType::Identifier,
+                    current_line
+                ));
+            }
         }
 
-        Ok(tokenized_vector)
+
+        Ok(tokenized_vector_aux)
     }
 }
