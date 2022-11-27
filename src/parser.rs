@@ -15,7 +15,8 @@ pub struct Parser<'a>{
 
     pub grammar_tokens : HashMap<&'a str,&'a str>,
     pub file_tokens  : Vec<Token>,
-    pub line_control : u32
+    pub line_control : u32,
+    
 }
 
 
@@ -36,11 +37,6 @@ impl<'a> Parser<'_>{
         self.program();
     }
 
-    fn end_of_file(&self) -> bool{
-        //Verifica si queda o no un solo caracter.
-        self.file_tokens.len()  == 1
-    }
-
     fn consume(&mut self){
         //Remueve el elemento que se encuentre al inicio del vector.
         self.file_tokens.remove(0);
@@ -53,35 +49,15 @@ impl<'a> Parser<'_>{
         }
         false
     }
-    fn is_letter(&self,character : char) -> bool{
-        
-        //Valida si el caracter es una letra.
-        if let Some(element) = self.grammar_tokens.get(character.to_string().as_str()){
-            if element == &"LETTER"{
-                return true;
-            }
-        }
 
+    fn is_of_type(&self,element : &String,type_of : &str) -> bool {
+        if let Some(result) = self.grammar_tokens.get(element.as_str()){
+            if result.contains(type_of) { return true }
+        }
 
         false
     }
-    fn is_digit(&self,character : char) -> bool{
-        //Valida si el caracter es una letra.
-        if let Some(element) = self.grammar_tokens.get(character.to_string().as_str()){
-            if element == &"NUMBER"{
-                return true;
-            }
-        }
-        false
-    }
 
-    fn is_keyword(&self,keyword : &String)-> bool{
-
-        if let Some(value) = self.grammar_tokens.get(keyword.as_str()){
-            if value.contains(&"KEYWORD") { return true }
-        }
-        false
-    }
     
     fn update_line(&mut self){
         if let Some(element) = self.file_tokens.get(0){
@@ -169,23 +145,16 @@ impl<'a> Parser<'_>{
         if !self.declaration_type(){    
             return false;
         }
+        
         if !self.identifiers(){
-            if let Some(element) = self.file_tokens.get(0){
-                eprintln!("Linea {} Error de sintaxis.",element.get_line());
-                process::exit(0);   
-    
-            }
+            self.end_process();
             return false;
         }
         if !self.compare_to_top(";"){
-            if let Some(element) = self.file_tokens.get(0){
-                eprintln!("Se esperaba ';'");
-                eprintln!("Linea {} Error de sintaxis.",element.get_line());
-                process::exit(0);   
-    
-            }
+            self.end_process();
             return false;
         }
+        self.update_line();
         self.consume();
         true
 
@@ -196,9 +165,9 @@ impl<'a> Parser<'_>{
         //Verifica si el elemento en el vector contiene un 'INT' o 'Boolean'
         //Formato <Type> ::= int | boolean
 
-        if self.end_of_file() { return false }
 
-        if self.compare_to_top("int") || self.compare_to_top("boolean") { 
+        if self.compare_to_top("int") || self.compare_to_top("boolean") {
+            self.update_line();
             self.consume();
             return true
         }
@@ -209,16 +178,16 @@ impl<'a> Parser<'_>{
     fn identifiers(&mut self) -> bool{
         //Verifica que tenga forma de identificadores
         //Formato <Identifiers> ::= <Identifier> {','<identifier>}*
-        if self.end_of_file() { return false }
 
 
         if !self.identifier(){ return false; }
 
-        
+        self.update_line();
         self.consume();
 
 
         if self.compare_to_top(","){
+            self.update_line();
             self.consume();
             return self.identifiers();
         }
@@ -231,20 +200,19 @@ impl<'a> Parser<'_>{
         //Verifica que el identificador inicie con  una letra
         //y tenga una secuencia de letras y numero despues del primer caracter.
         //Formato <Identifier> ::= <Letter> | <Identifier> <Letter> | <Identifier> <Digit>
-        if self.end_of_file() { return false}
 
 
         if let Some(value) = self.file_tokens.get(0){
             
-            if self.is_keyword(&value.get_value()){ 
+            if self.is_of_type(&value.get_value(),"KEYWORD"){ 
                 return false 
             }
-
-            if self.is_letter(value.get_value().chars().next().unwrap()){
+            let first_char = value.get_value().chars().next().unwrap().to_string();
+            if self.is_of_type(&first_char,"LETTER"){
                 let sliced_string = &value.get_value()[1..];
                 for chr in sliced_string.chars(){
-                    if self.is_letter(chr) { continue }
-                    else if self.is_digit(chr) { continue }
+                    if self.is_of_type(&chr.to_string(),"LETTER") { continue }
+                    else if self.is_of_type(&chr.to_string(),"NUMBER") { continue }
                     return false;
                 }
                 return true;
@@ -263,7 +231,6 @@ impl<'a> Parser<'_>{
 
         if self.statement(){
             return self.statements();
-            
         }
 
         false
@@ -289,6 +256,7 @@ impl<'a> Parser<'_>{
         //Formato <Block> ::= '{'<Statements>'}'
 
         if self.compare_to_top("{"){
+            self.update_line();
             self.consume();
         }
         else { return false }
@@ -296,11 +264,13 @@ impl<'a> Parser<'_>{
 
 
         if self.statements() || self.compare_to_top("}") {
+            self.update_line();
             self.consume();
 
             return true;
         }
 
+        self.end_process();
 
         false
 
@@ -314,18 +284,26 @@ impl<'a> Parser<'_>{
         //Formato <Assignment> ::= <Identifier> '=' <Expression> ';'
 
         if self.identifier(){
+            self.update_line();
             self.consume();
         } else { return false }
 
+
+
         if self.compare_to_top("="){
+            self.update_line();
             self.consume();
-        } else { return false }
+        } else { self.end_process(); return false }
+
 
 
         if self.expression() && self.compare_to_top(";"){
+            self.update_line();
             self.consume();
             return true
         }
+
+        self.end_process();
 
         false
     }
@@ -335,27 +313,32 @@ impl<'a> Parser<'_>{
         //Formato EBNF <IfStatement> ::= if (<Expression>) <Statement> [else <Statement>]
 
         if self.compare_to_top("if"){
+            self.update_line();
             self.consume();
         } else { return false }
+
         if self.compare_to_top("("){
+            self.update_line();
             self.consume();
-        }else { return false; }
+        }else { self.end_process(); return false; }
         if self.expression() && self.compare_to_top(")"){
+            self.update_line();
             self.consume();
-        } else { return false }
+        } else { self.end_process(); return false }
         
         if self.statement(){
 
             if self.compare_to_top("else"){
+                self.update_line();
                 self.consume();
                 if self.statement(){ return true }
-                process::exit(0);
+                self.end_process();
             }
 
             return true;
         }
 
-        
+        self.end_process();
 
 
 
@@ -368,22 +351,26 @@ impl<'a> Parser<'_>{
         //Formato EBNF <WhileStatement> ::= while (<Expression>) <Statement>
 
         if self.compare_to_top("while"){
+            self.update_line();
             self.consume();
         } else { return false }
 
 
         if self.compare_to_top("("){
+            self.update_line();
             self.consume();
-        } else { return false }
+        } else { self.end_process(); return false }
 
         if self.expression() && self.compare_to_top(")"){
+            self.update_line();
             self.consume();
-        } else { return false }
+        } else { self.end_process(); return false }
 
         if self.statement(){
             return true;
         }
 
+        self.end_process();
         false 
     }
 
@@ -395,8 +382,9 @@ impl<'a> Parser<'_>{
         //caso critico, si luego del OR no hay una conjunction es invalido y debe enviar un PANIC.
         if self.conjunction() {
             if self.compare_to_top("||"){
+                self.update_line();
                 self.consume();
-                if !self.conjunction(){ return false }
+                if !self.conjunction(){ self.end_process(); return false }
             }
             return true;
         }
@@ -410,8 +398,9 @@ impl<'a> Parser<'_>{
         //Formato EBNF <Conjunction> ::= <Relation> {'&&' <Relation>}*
         if self.relation(){
             if self.compare_to_top("&&"){
+                self.update_line();
                 self.consume();
-                if !self.relation() { return false }
+                if !self.relation() { self.end_process(); return false }
             }
             return true;
         }
@@ -426,8 +415,9 @@ impl<'a> Parser<'_>{
         if self.addition(){
             if self.compare_to_top(">") || self.compare_to_top(">=") || self.compare_to_top("==") ||
                 self.compare_to_top("!=")  || self.compare_to_top("<") || self.compare_to_top("<="){
+                    self.update_line();
                     self.consume();
-                    if !self.addition() { return  false }
+                    if !self.addition() { self.end_process(); return  false }
                 }
                 return true;
         }
@@ -442,8 +432,9 @@ impl<'a> Parser<'_>{
         //Formato <Addition> ::= <Term> {['+','-'] <Term>}*
         if self.term(){ 
             if self.compare_to_top("+") || self.compare_to_top("-"){
+                self.update_line();
                 self.consume();
-                if !self.term() { return false }
+                if !self.term() { self.end_process(); return false }
             }
             return true;
         }
@@ -456,8 +447,9 @@ impl<'a> Parser<'_>{
         //Formato EBNF <Term>::= <Negation> {['*','/'] <Negation>}*
         if self.negation(){
             if self.compare_to_top("*") || self.compare_to_top("/"){
+                self.update_line();
                 self.consume();
-                if !self.negation() { return false }
+                if !self.negation() { self.end_process(); return false }
             }
             return true;
         }
@@ -468,7 +460,10 @@ impl<'a> Parser<'_>{
         //Validando la negation
         //Formato en ebnf <Negation> ::= [!] <Factor>
         if self.compare_to_top("!"){
+            self.update_line();
             self.consume();
+            if self.factor() { return true;}
+            self.end_process();
         }
 
         if self.factor(){ return true; }
@@ -483,15 +478,19 @@ impl<'a> Parser<'_>{
         //2. Verifica que sea una expresion.
         //Formato EBNF <Factor> ::= <Identifier> | <Literal> | (<Expression>)
         if self.identifier() || self.literal(){
+            self.update_line();
             self.consume();
             return true;
         }
         else if self.compare_to_top("("){
+            self.update_line();
             self.consume();
             if self.expression() && self.compare_to_top(")"){
+                self.update_line();
                 self.consume();
                 return true;
             }
+            self.end_process();
         }
 
         false
@@ -519,7 +518,7 @@ impl<'a> Parser<'_>{
         //Formato EBNF <Integer> ::= <Digit> | <Integer> <Digit>
         if let Some(value) = self.file_tokens.get(0){
             for chr in value.get_value().chars(){
-                if self.is_digit(chr) { continue }
+                if self.is_of_type(&chr.to_string(),"NUMBER") { continue }
                 return false;
             }
 

@@ -58,11 +58,10 @@ impl<'a> Lexer<'_>{
     }
 
 
-    fn is_keyword(&self,keyword : &String) -> bool{
-        if let Some(value) = self.grammar_tokens.get(keyword.as_str()){
-            if value.contains("KEYWORD") { return true }
+    fn is_of_type(&self,element : &String,type_of : &str) -> bool{
+        if let Some(result) = self.grammar_tokens.get(element.as_str()){
+            if result.contains(type_of) { return true }
         }
-
         false
     }
 
@@ -74,18 +73,8 @@ impl<'a> Lexer<'_>{
         false
     }
 
-    fn is_separator(&self,character : char) -> bool{
-        if let Some(element) = self.grammar_tokens.get(character.to_string().as_str()){
-            if element.contains("SEPARATOR"){ return true }
-        }
-        false
-    }
-    fn is_operator(&self,character : char) -> bool {
-        if let Some(element) = self.grammar_tokens.get(character.to_string().as_str()){
-            if element.contains("OPERATOR"){ return true }
-        }
-        false
-    }
+
+    
 
     pub fn read_file_lines(&self,file_content : &String) -> Result<Vec<Token>,String>{
 
@@ -100,9 +89,14 @@ impl<'a> Lexer<'_>{
         for line in file_content.trim().lines(){
             if line.trim().starts_with("//") { continue }
             if line.trim().len() == 0 { continue }
+            
 
-            let splited_line : Vec<&str> = line.trim().split_whitespace().collect();
-            if let Ok(mut val) = self.scanner(&splited_line,current_line){
+            let split_by_comment : Vec<&str> = line.trim().split("//").collect(); 
+            let split_by_spaces : Vec<&str> = split_by_comment[0].trim().split_whitespace().collect();
+            
+            //let splited_line : Vec<&str> = line.trim().split_whitespace().collect();
+
+            if let Ok(mut val) = self.scanner(&split_by_spaces,current_line){
                 tokenized_vector.append(&mut val);
             }
 
@@ -146,7 +140,7 @@ impl<'a> Lexer<'_>{
 
         let mut tokenized_vector_aux : Vec<Token> = Vec::new();
         
-        if self.is_keyword(&token.to_string()){
+        if self.is_of_type(&token.to_string(),"KEYWORD"){
 
 
             tokenized_vector_aux.push(Token::build(
@@ -180,10 +174,10 @@ impl<'a> Lexer<'_>{
                 builded_token.clear();
                 builded_token.push(current);
             }
-            else if self.is_separator(current) && !check_next{
+            else if self.is_of_type(&current.to_string(),"SEPARATOR") && !check_next{
                 if !builded_token.is_empty(){
 
-                    if self.is_keyword(&builded_token){
+                    if self.is_of_type(&builded_token,"KEYWORD"){
                         tokenized_vector_aux.push(Token::build(
                             &builded_token,
                             TokenType::KeyWord,
@@ -206,7 +200,7 @@ impl<'a> Lexer<'_>{
                     current_line
                 ));
             }
-            else if self.is_separator(current) && check_next{
+            else if self.is_of_type(&current.to_string(),"SEPARATOR") && check_next{
                 check_next = false;
                 
                 tokenized_vector_aux.push(Token::build(
@@ -223,7 +217,7 @@ impl<'a> Lexer<'_>{
                     current_line
                 ));
             }
-            else if self.is_operator(current){
+            else if self.is_of_type(&current.to_string(),"OPERATOR"){
                 
                 if check_next{
                     builded_token.push(current);
@@ -231,7 +225,7 @@ impl<'a> Lexer<'_>{
                 else{
                     if !builded_token.is_empty(){
                         
-                        if self.is_keyword(&builded_token){
+                        if self.is_of_type(&builded_token,"KEYWORD"){
                             tokenized_vector_aux.push(Token::build(
                                 &builded_token,
                                 TokenType::KeyWord,
@@ -256,7 +250,7 @@ impl<'a> Lexer<'_>{
         }
 
         if !builded_token.is_empty(){
-            if self.is_keyword(&builded_token){
+            if self.is_of_type(&builded_token,"KEYWORD"){
                 tokenized_vector_aux.push(Token::build(
                     &builded_token,
                     TokenType::KeyWord,
