@@ -6,6 +6,13 @@ use std::process;
 
 use crate::lexer::Token;
 
+use tabled::{builder::Builder,Style};
+use evalexpr::*;
+use evalexpr::Value::Int;
+use evalexpr::Value::Boolean;
+
+
+
 #[derive(Debug)]
 pub struct Parser<'a>{
 
@@ -16,6 +23,9 @@ pub struct Parser<'a>{
     pub grammar_tokens : HashMap<&'a str,&'a str>,
     pub file_tokens  : Vec<Token>,
     pub line_control : u32,
+    pub symbol_table : HashMap<String,String>,
+    pub declaration_flag : bool,
+    pub current_expresion : String
     
 }
 
@@ -29,17 +39,91 @@ impl<'a> Parser<'_>{
 
         let fil_tokens = file_tokens.clone();
 
-        Parser { grammar_tokens : gram, file_tokens: fil_tokens,line_control : 1 }
+        let new_symbol_table : HashMap<String,String> = HashMap::new();  
+
+        Parser { 
+            grammar_tokens : gram, 
+            file_tokens: fil_tokens,line_control : 1, 
+            symbol_table : new_symbol_table ,
+            declaration_flag : false,
+            current_expresion : String::new()
+        }
     }
 
     pub fn run(&mut self){
         //Inicia el analisis sintactico por la primera regla de produccion.
         self.program();
+
+        self.print_table();
     }
 
-    fn consume(&mut self){
+
+
+    fn eval_expression(&mut self) -> Result<Value,String> {
+        //Evalua una expresion
+        //
+        
+        let current_exp = self.current_expresion.clone();
+        let  splited_expression : Vec<&str> = current_exp.trim().split(" ").collect();
+
+        let mut temporal_expression = String::new();
+
+        for factor in splited_expression{
+            if self.is_identifier(&factor.to_string()){
+                if let Some(value) = self.symbol_table.get(factor){
+                    if !value.is_empty(){
+                        temporal_expression.push_str(&value);
+                        continue
+                    }
+                }
+                eprintln!("Variable no declarada o sin valor asignado");
+                self.end_process();
+            }
+            temporal_expression.push_str(&factor);
+        }
+        
+    
+            
+        if let Ok(result) = eval(&temporal_expression){
+            return Ok(result);
+        }
+
+        Err(format!("Expresion invalida: {}",temporal_expression))
+    }
+    fn attach_to_expression(&mut self){
+        let item = self.consume().get_value().clone();
+        self.current_expresion.push_str(format!("{} ",item).as_str());
+    }
+    fn clear_expression(&mut self){
+        self.current_expresion.clear();
+    }
+
+    fn print_table(&self){
+
+        let mut builder = Builder::default();
+
+        let cols = ["Variable","Valor"];
+        builder.set_columns(cols);
+
+
+        for (key,value) in &self.symbol_table{
+            let mut v =  vec![];
+            v.push(key);
+            v.push(value);
+            builder.add_record(v);
+        }
+        
+        
+        let table = builder.build()
+        .with(Style::rounded())
+        .to_string();
+        print!("{}[2J", 27 as char);
+        println!("{table}");
+    }
+
+    fn consume(&mut self) -> Token{
         //Remueve el elemento que se encuentre al inicio del vector.
-        self.file_tokens.remove(0);
+        self.file_tokens.remove(0)
     }
 
     fn compare_to_top(&self,token : &str) -> bool{
@@ -50,6 +134,23 @@ impl<'a> Parser<'_>{
         false
     }
 
+
+    fn is_identifier(&mut self, identifier : &String) -> bool{
+        if self.is_of_type(&identifier,"KEYWORD"){ return false }
+
+        let first_char = identifier.chars().next().unwrap().to_string();
+        if self.is_of_type(&first_char,"LETTER"){
+            let sliced_string = &first_char[1..];
+            for chr in sliced_string.chars(){
+                if self.is_of_type(&chr.to_string(),"LETTER") { continue }
+                else if self.is_of_type(&chr.to_string(),"NUMBER") { continue }
+                return false
+            }
+            return true;
+        }
+
+        false
+    }
     fn is_of_type(&self,element : &String,type_of : &str) -> bool {
         if let Some(result) = self.grammar_tokens.get(element.as_str()){
             if result.contains(type_of) { return true }
@@ -142,9 +243,12 @@ impl<'a> Parser<'_>{
         //2. Verifica los identificadores  que siguen luego del tipo de declaracion
         //Formato <Declaration> ::= <Type> <Identifiers>';'
 
+
         if !self.declaration_type(){    
             return false;
         }
+
+        self.declaration_flag = true;
         
         if !self.identifiers(){
             self.end_process();
@@ -183,7 +287,20 @@ impl<'a> Parser<'_>{
         if !self.identifier(){ return false; }
 
         self.update_line();
-        self.consume();
+
+        if self.declaration_flag{
+            let name =  self.consume().get_value().clone();
+            if let None = self.symbol_table.get(&name){
+                self.symbol_table.insert(name,"".to_string());
+            }
+            else{
+                eprintln!("'{name}' ya fue declara");
+                self.end_process();
+            }
+            
+        } 
+        else { self.consume(); }
+        
 
 
         if self.compare_to_top(","){
@@ -193,9 +310,15 @@ impl<'a> Parser<'_>{
         }
 
 
+        self.declaration_flag = false;
+
+
         true
 
     }
+
+    
+
     fn identifier(&mut self) -> bool{
         //Verifica que el identificador inicie con  una letra
         //y tenga una secuencia de letras y numero despues del primer caracter.
@@ -283,9 +406,15 @@ impl<'a> Parser<'_>{
         //y por ultimo verifica la expresion y concluya con ';'
         //Formato <Assignment> ::= <Identifier> '=' <Expression> ';'
 
+        //Ejecuta la expression que se indique
+        //Se verifica que la variable exista.
+
+
+        let assign_to;
         if self.identifier(){
             self.update_line();
-            self.consume();
+            assign_to = self.consume().get_value();
+
         } else { return false }
 
 
@@ -297,7 +426,36 @@ impl<'a> Parser<'_>{
 
 
 
+
         if self.expression() && self.compare_to_top(";"){
+
+            if let None = self.symbol_table.get(&assign_to){
+
+                eprintln!("La variable '{assign_to}' no fue declarada.");
+                self.end_process();
+            }
+
+            match self.eval_expression(){
+                Ok(result) => {
+                    let symbol = self.symbol_table.entry(assign_to.to_string()).or_insert("".to_string());
+
+                    if let Int(value) = result{ *symbol = value.to_string(); }
+                    
+                    else if let Boolean(value) = result { *symbol = value.to_string(); }
+                    else{
+                        eprintln!("expression invalida");
+                        self.end_process();
+                    }    
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    self.end_process();
+                }
+            }
+
+
+            
+            self.clear_expression();
             self.update_line();
             self.consume();
             return true
@@ -383,7 +541,8 @@ impl<'a> Parser<'_>{
         if self.conjunction() {
             if self.compare_to_top("||"){
                 self.update_line();
-                self.consume();
+                //self.consume();
+                self.attach_to_expression();
                 if !self.conjunction(){ self.end_process(); return false }
             }
             return true;
@@ -399,7 +558,8 @@ impl<'a> Parser<'_>{
         if self.relation(){
             if self.compare_to_top("&&"){
                 self.update_line();
-                self.consume();
+                //self.consume();
+                self.attach_to_expression();
                 if !self.relation() { self.end_process(); return false }
             }
             return true;
@@ -416,7 +576,8 @@ impl<'a> Parser<'_>{
             if self.compare_to_top(">") || self.compare_to_top(">=") || self.compare_to_top("==") ||
                 self.compare_to_top("!=")  || self.compare_to_top("<") || self.compare_to_top("<="){
                     self.update_line();
-                    self.consume();
+                    //self.consume();
+                    self.attach_to_expression();
                     if !self.addition() { self.end_process(); return  false }
                 }
                 return true;
@@ -433,7 +594,8 @@ impl<'a> Parser<'_>{
         if self.term(){ 
             if self.compare_to_top("+") || self.compare_to_top("-"){
                 self.update_line();
-                self.consume();
+                //self.consume();
+                self.attach_to_expression();
                 if !self.term() { self.end_process(); return false }
             }
             return true;
@@ -448,7 +610,8 @@ impl<'a> Parser<'_>{
         if self.negation(){
             if self.compare_to_top("*") || self.compare_to_top("/"){
                 self.update_line();
-                self.consume();
+                //self.consume();
+                self.attach_to_expression();
                 if !self.negation() { self.end_process(); return false }
             }
             return true;
@@ -461,7 +624,8 @@ impl<'a> Parser<'_>{
         //Formato en ebnf <Negation> ::= [!] <Factor>
         if self.compare_to_top("!"){
             self.update_line();
-            self.consume();
+            //self.consume();
+            self.attach_to_expression();
             if self.factor() { return true;}
             self.end_process();
         }
@@ -479,15 +643,18 @@ impl<'a> Parser<'_>{
         //Formato EBNF <Factor> ::= <Identifier> | <Literal> | (<Expression>)
         if self.identifier() || self.literal(){
             self.update_line();
-            self.consume();
+            //self.consume();
+            self.attach_to_expression();
             return true;
         }
         else if self.compare_to_top("("){
             self.update_line();
-            self.consume();
+            //self.consume();
+            self.attach_to_expression();
             if self.expression() && self.compare_to_top(")"){
                 self.update_line();
-                self.consume();
+                //self.consume();
+                self.attach_to_expression();
                 return true;
             }
             self.end_process();

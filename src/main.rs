@@ -5,6 +5,7 @@ use std::process;
 use std::collections::HashMap;
 
 
+
 //Falta hacer la deteccion de errores
 //falta por hacer tabla de simbolos.
 
@@ -26,7 +27,6 @@ mod parser;
     //<Separator> ::= ( | ) | { | } | ; | ,
     //<Operador> ::= = | + | - | * | / | > | >= | == | != | < | <= | && | || | !
     
-
 
 
 
@@ -87,6 +87,8 @@ fn read_file(file_content :  &String) -> Result<bool,String>{
 
     let tokens = generate_tokens();
 
+
+
     let lexer = lexer::Lexer::build(&tokens);
 
     if let Ok(value) = lexer.read_file_lines(&file_content){
@@ -108,11 +110,17 @@ fn read_file(file_content :  &String) -> Result<bool,String>{
 
 fn main() {
 
-    match fs::read_to_string("ejercicio.jay"){
+    
+
+
+
+    match fs::read_to_string("FUENTE.jay"){
         Ok(content) => {
             if let Err(value) = read_file(&content){
                 eprintln!("{value}");
             }
+            //
+
             
         },
         Err(_error) => {
