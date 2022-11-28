@@ -25,7 +25,10 @@ pub struct Parser<'a>{
     pub line_control : u32,
     pub symbol_table : HashMap<String,String>,
     pub declaration_flag : bool,
-    pub current_expresion : String
+    pub current_expresion : String,
+    pub if_flag : bool,
+    pub active_if : bool,
+    pub else_flag : bool
     
 }
 
@@ -46,7 +49,10 @@ impl<'a> Parser<'_>{
             file_tokens: fil_tokens,line_control : 1, 
             symbol_table : new_symbol_table ,
             declaration_flag : false,
-            current_expresion : String::new()
+            current_expresion : String::new(),
+            if_flag  : false,
+            active_if : false,
+            else_flag : false
         }
     }
 
@@ -85,6 +91,7 @@ impl<'a> Parser<'_>{
     
             
         if let Ok(result) = eval(&temporal_expression){
+            self.clear_expression();
             return Ok(result);
         }
 
@@ -123,8 +130,8 @@ impl<'a> Parser<'_>{
         let table = builder.build()
         .with(Style::rounded())
         .to_string();
-        print!("{}[2J", 27 as char);
-        println!("{table}");
+        //print!("{}[2J", 27 as char);
+        println!("\n{table}");
     }
 
     fn consume(&mut self) -> Token{
@@ -411,6 +418,39 @@ impl<'a> Parser<'_>{
 
     }
 
+    fn run_assigment(&mut self, assign_to : String){
+
+
+        //se encarga de hacer las asignaciones correspondientes
+        //a la variable que se indique.
+        //se evalua la expresion que se tiene
+        // y se le asigna el valor.
+        if let None = self.symbol_table.get(&assign_to){
+
+            eprintln!("La variable '{assign_to}' no fue declarada.");
+            self.end_process();
+        }
+
+        match self.eval_expression(){
+            Ok(result) => {
+                let symbol = self.symbol_table.entry(assign_to.to_string()).or_insert("".to_string());
+
+                if let Int(value) = result{ *symbol = value.to_string(); }
+                
+                else if let Boolean(value) = result { *symbol = value.to_string(); }
+                else{
+                    eprintln!("expression invalida");
+                    self.end_process();
+                }    
+                self.print_table();
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                self.end_process();
+            }
+        }
+    }
+
     pub fn assignment(&mut self) -> bool{
         //Verifica si se trata de una asignacion
         //Primero verifica que sea un identificador valido
@@ -441,33 +481,29 @@ impl<'a> Parser<'_>{
 
         if self.expression() && self.compare_to_top(";"){
 
-            if let None = self.symbol_table.get(&assign_to){
+            
 
-                eprintln!("La variable '{assign_to}' no fue declarada.");
-                self.end_process();
+
+            if self.active_if && self.if_flag && !self.else_flag{
+                self.run_assigment(assign_to);
             }
-
-            match self.eval_expression(){
-                Ok(result) => {
-                    let symbol = self.symbol_table.entry(assign_to.to_string()).or_insert("".to_string());
-
-                    if let Int(value) = result{ *symbol = value.to_string(); }
-                    
-                    else if let Boolean(value) = result { *symbol = value.to_string(); }
-                    else{
-                        eprintln!("expression invalida");
-                        self.end_process();
-                    }    
-                }
-                Err(error) => {
-                    eprintln!("{error}");
-                    self.end_process();
-                }
+            else if self.active_if && !self.if_flag && !self.else_flag{
+                self.clear_expression();
             }
-
+            else if self.active_if && self.if_flag && self.else_flag{
+                self.clear_expression();
+            }
+            else if self.active_if && self.else_flag{
+                self.run_assigment(assign_to);
+            }
+            else{
+                self.run_assigment(assign_to);
+            }
+            
+            
 
             
-            self.clear_expression();
+            
             self.update_line();
             self.consume();
             return true
@@ -482,29 +518,63 @@ impl<'a> Parser<'_>{
         //Verifica la sintaxis de un IF
         //Formato EBNF <IfStatement> ::= if (<Expression>) <Statement> [else <Statement>]
 
+        //Taambien verifica si la condicion se cumple y ejecuta el bloque que le sigue
+        //en caso de no, y  exista un else ejecuta todo el codigo que le sigue.
+
         if self.compare_to_top("if"){
             self.update_line();
             self.consume();
         } else { return false }
 
+        self.active_if = true;
+
         if self.compare_to_top("("){
             self.update_line();
             self.consume();
         }else { self.end_process(); return false; }
+
         if self.expression() && self.compare_to_top(")"){
             self.update_line();
             self.consume();
+            match self.eval_expression(){
+                Ok(result) => {
+                    if let Boolean(value) = result{
+                        if value{
+                            self.if_flag = true;
+                        }
+                        
+                    }
+                    else{
+                        eprintln!("Expected boolean expression");
+                        self.end_process();
+                    }
+                },
+                Err(error) =>{
+                    eprintln!("{error}");
+                    self.end_process();
+                }
+            }
+
+            
+
         } else { self.end_process(); return false }
         
         if self.statement(){
-
             if self.compare_to_top("else"){
+                self.else_flag = true;
+                
                 self.update_line();
                 self.consume();
-                if self.statement(){ return true }
+                if self.statement(){
+                    self.active_if = false;
+                    self.else_flag = false; 
+                    return true 
+                }
                 self.end_process();
             }
-
+            
+            self.active_if = false;
+            self.if_flag = false;
             return true;
         }
 

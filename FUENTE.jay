@@ -1,6 +1,8 @@
 void main(){
-    int x,b;
-    b = 2;
-    x = 1;
-    x = x + 2;
+    boolean a;
+    int b;
+    a = false;
+    b = 0;
+
+    
 }
