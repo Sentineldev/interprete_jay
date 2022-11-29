@@ -1,8 +1,19 @@
 void main(){
-    boolean a;
-    int b;
-    a = false;
-    b = 0;
+    //Factorial iterativo
+    int a,fact;
+    //inicializando
+    fact = 1;
+    a = 5;
+    //mientras
+    while( a != 0){
+        fact = fact * a;
+        a = a - 1;
+    }    
+    if(a > 4) fact = 10;
+    else{
+        if(a > 4){
+            fact = 11;
 
-    
+        }
+    }
 }

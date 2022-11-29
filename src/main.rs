@@ -4,7 +4,6 @@ use std::fs;
 use std::process;
 use std::collections::HashMap;
 
-
 //deteccion de errores implementada, pero aun falta los ifs,  whiles y elses.
 //tabla de simbolos construida.
 
@@ -26,6 +25,76 @@ mod parser;
     //<Separator> ::= ( | ) | { | } | ; | ,
     //<Operador> ::= = | + | - | * | / | > | >= | == | != | < | <= | && | || | !
     
+
+//Estructura sintactica de  Jay en EBNF
+/*
+
+<Program> --> void main()  ́{ ́<Declarations> <Statements>  ́} ́
+<Declarations> -->{ <Declaration> }*
+<Declaration> --> <Type> <Identifiers>;
+<Type> --> int | boolean
+<Identifiers> --> <Identifier> { , <Identifier> }*
+<Statements> --> { <Statement> }*
+<Statement> --> <Block> | <Assignment> | <IfStatement> | <WhileStatement>
+<Block> -->  ́{ ́ <Statements>  ́} ́
+<Assignment> --> <Identifier> = <Expression>;
+<IfStatemenmt> -->if (<Expression>) <Statement> [else <Statement>]
+<WhileStatement> --> while ( <Expression> )<Statement>
+<Expression> --> <Conjunction> { || <Conjunction> }*
+<Conjunction> --> <Relation> { && <Relation> }*
+<Relation> --> <Addition> { [ > | >= | == | != | <| <= ] <Addition> }*
+<Addition> --> <Term> { [ + | - ] <Term> }*
+<Term> --> <Negation> { [ * | / ] <Negation> }*
+<Negation> --> [ ! ] <Factor>
+Factor --> <Identifier> | <Literal> | (<Expression>)
+
+*/
+
+
+/*
+
+
+Se aplico el algoritmo 'Recursive Descent' para hacer la validacion de  sintaxis
+Tras varias pruebas aplicadas el programa dio resultados positivos.
+
+Para el analisis lexico no se uso ningun algoritmo en particular, mas que una tabla de hash
+con los distintos elementos terminales identificados.
+
+La tabla de simbolos se muestra usando la libreria de rust Tabled para que esta tenga un estilo guapo.
+
+El programa solo evalua asignaciones e if's anidados sin else
+es decir.
+
+// esto es evaluado correctamente.
+if(expression){
+    if(<Statement>){
+
+    }
+}else{
+    <Statement>
+}
+
+Esto no es evaluado correctamente.
+if(expression){
+    if(<Statement>){
+
+    }else{
+        <statement>
+    }
+}else{
+    <Statement>
+}
+
+tampoco evalua y hace la iteracion del ciclo while
+
+Nota: Seguire trabajando en este proyecto luego de entregarselo. Intentare implementar ese ciclo iterativo y la evaluacion
+correcta de los ifs anidados y demas.
+
+Nota 2: Solo hice uso de dos librerias Para la tabla y la evaluacion de expresiones...
+Si esto no estaba permitido por favor hagame saber.
+Aplique la mayoria del proyecto solo con herramientas prederterminadas del lenguaje.
+Tanto analisis lexico, como sintactico fueron implementados con librerias prederterminadas.
+*/
 
 
 
@@ -112,14 +181,11 @@ fn main() {
     
 
 
-
-    match fs::read_to_string("FUENTE.jay"){
+    match fs::read_to_string(format!("{}/FUENTE.jay",std::env::current_dir().unwrap().display())){
         Ok(content) => {
             if let Err(value) = read_file(&content){
                 eprintln!("{value}");
             }
-            //
-
             
         },
         Err(_error) => {

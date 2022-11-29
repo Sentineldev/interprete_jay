@@ -87,6 +87,8 @@ impl<'a> Lexer<'_>{
         let mut current_line : u32 =  1;
 
         for line in file_content.trim().lines(){
+            current_line+=1;
+
             if line.trim().starts_with("//") { continue }
             if line.trim().len() == 0 { continue }
             
@@ -96,11 +98,10 @@ impl<'a> Lexer<'_>{
             
             //let splited_line : Vec<&str> = line.trim().split_whitespace().collect();
 
-            if let Ok(mut val) = self.scanner(&split_by_spaces,current_line){
+            if let Ok(mut val) = self.scanner(&split_by_spaces,current_line-1){
                 tokenized_vector.append(&mut val);
             }
 
-            current_line+=1;
 
         }
 

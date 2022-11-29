@@ -12,6 +12,27 @@ use evalexpr::Value::Int;
 use evalexpr::Value::Boolean;
 
 
+#[derive(Debug)]
+pub struct IfStatement{
+
+
+    pub exp : bool,
+    pub body : Vec<Token>,
+    pub is_active : bool,
+    pub else_body : Vec<Token>,
+    pub else_is_active : bool
+}
+
+impl IfStatement{
+    pub fn build() -> IfStatement{
+       IfStatement {
+         exp : false,body: Vec::new(),is_active: false,
+         else_body : Vec::new(),
+         else_is_active : false
+    
+    }
+    }
+}
 
 #[derive(Debug)]
 pub struct Parser<'a>{
@@ -26,9 +47,8 @@ pub struct Parser<'a>{
     pub symbol_table : HashMap<String,String>,
     pub declaration_flag : bool,
     pub current_expresion : String,
-    pub if_flag : bool,
-    pub active_if : bool,
-    pub else_flag : bool
+    pub if_statement : IfStatement
+  
     
 }
 
@@ -50,9 +70,7 @@ impl<'a> Parser<'_>{
             symbol_table : new_symbol_table ,
             declaration_flag : false,
             current_expresion : String::new(),
-            if_flag  : false,
-            active_if : false,
-            else_flag : false
+            if_statement : IfStatement::build()
         }
     }
 
@@ -67,13 +85,16 @@ impl<'a> Parser<'_>{
 
     fn eval_expression(&mut self) -> Result<Value,String> {
         //Evalua una expresion
-        //
         
+        //toma la expresion que se guardo durante el proceso
+        // y se separa por espacios para luego ser evaluada
+        // y asignar los valores correspondientes donde existan variables
         let current_exp = self.current_expresion.clone();
         let  splited_expression : Vec<&str> = current_exp.trim().split(" ").collect();
 
         let mut temporal_expression = String::new();
 
+        //se reemplzan los identificadores por sus respectivos valores.
         for factor in splited_expression{
             if self.is_identifier(&factor.to_string()){
                 if let Some(value) = self.symbol_table.get(factor){
@@ -100,8 +121,15 @@ impl<'a> Parser<'_>{
     fn attach_to_expression(&mut self){
 
         //Toma el primer elemento que se encuentre en el vector y lo agrega a la cadena de expresion.
-        let item = self.consume().get_value().clone();
-        self.current_expresion.push_str(format!("{} ",item).as_str());
+        let item = self.consume();
+        if self.if_statement.is_active && !self.if_statement.else_is_active {
+            self.if_statement.body.push(item.clone());
+        }
+        if self.if_statement.else_is_active && !self.if_statement.exp{
+            self.if_statement.else_body.push(item.clone());
+        }
+        self.current_expresion.push_str(format!("{} ",item.get_value().clone()).as_str());
+
     }
     fn clear_expression(&mut self){
         //Limpia la expresion actual.
@@ -110,6 +138,9 @@ impl<'a> Parser<'_>{
 
     fn print_table(&self){
 
+        //muestra una tabla con las variables y sus valores.
+        //si  una variable no tiene un valor asignado, pero esta declara
+        //esta igual no se mostrara.
         let mut builder = Builder::default();
 
         let cols = ["Variable","Valor"];
@@ -153,6 +184,8 @@ impl<'a> Parser<'_>{
         //tambien verifica si no es una keyword.
         if self.is_of_type(&identifier,"KEYWORD"){ return false }
 
+        //verifica si el primer caracter leido del identificador es una letra
+        //de lo contrario emitira una excepcion;
         let first_char = identifier.chars().next().unwrap().to_string();
         if self.is_of_type(&first_char,"LETTER"){
             let sliced_string = &first_char[1..];
@@ -195,7 +228,8 @@ impl<'a> Parser<'_>{
          //Verifica la regla de produccion de un programa
          //<Program> ::= void main() '{' <Declarations> <Statements> '}'
 
-
+        //verifica cada  uno de los terminales, en caso de alguno no estar presente emite un error.
+        //esto debido a que un programa incialmente esta compuesto por esta definicion.
         if !self.compare_to_top("void"){
             self.end_process();
         }
@@ -234,6 +268,11 @@ impl<'a> Parser<'_>{
         }
         self.update_line();
         self.consume();
+
+        if !self.file_tokens.is_empty(){
+            self.update_line();
+            self.end_process();
+        }
         println!("after declarations:");
         for el in &self.file_tokens{
             print!(" asd{} ",el.get_value());
@@ -262,17 +301,18 @@ impl<'a> Parser<'_>{
         //2. Verifica los identificadores  que siguen luego del tipo de declaracion
         //Formato <Declaration> ::= <Type> <Identifiers>';'
 
-
+        //en este caso no se para la ejecucion del programa.
         if !self.declaration_type(){    
             return false;
         }
 
         self.declaration_flag = true;
-        
+        //si ha identificado un type, pero no le sigue un identificador este parara la ejecucion del codigo.
         if !self.identifiers(){
             self.end_process();
             return false;
         }
+        //igual que el caso anterior, pero esta vez con las comas.
         if !self.compare_to_top(";"){
             self.end_process();
             return false;
@@ -282,7 +322,7 @@ impl<'a> Parser<'_>{
         true
 
     }
-
+    
     fn declaration_type(&mut self) -> bool{
 
         //Verifica si el elemento en el vector contiene un 'INT' o 'Boolean'
@@ -305,8 +345,9 @@ impl<'a> Parser<'_>{
 
         if !self.identifier(){ return false; }
 
-        self.update_line();
-
+        //verifica si lo que esta en el topo es un identificador.
+        self.update_line(); 
+        //verifica que la variableu actual no haya sido declarada antes.
         if self.declaration_flag{
             let name =  self.consume().get_value().clone();
             if let None = self.symbol_table.get(&name){
@@ -320,8 +361,7 @@ impl<'a> Parser<'_>{
         } 
         else { self.consume(); }
         
-
-
+        //si lee este caracter, debe seguirle un identificador.
         if self.compare_to_top(","){
             self.update_line();
             self.consume();
@@ -343,6 +383,7 @@ impl<'a> Parser<'_>{
         //y tenga una secuencia de letras y numero despues del primer caracter.
         //Formato <Identifier> ::= <Letter> | <Identifier> <Letter> | <Identifier> <Digit>
 
+        //esta funcion tambien verifica que lo que se este leyendo sea un identificador, esto se ejecuta en de forma recursiva con als demas funciones.
 
         if let Some(value) = self.file_tokens.get(0){
             
@@ -397,21 +438,41 @@ impl<'a> Parser<'_>{
         //debe encontrar un } para estar valido.
         //Formato <Block> ::= '{'<Statements>'}'
 
+        
+
         if self.compare_to_top("{"){
+
             self.update_line();
-            self.consume();
+            let item = self.consume();
+            if self.if_statement.is_active && !self.if_statement.else_is_active{
+                self.if_statement.body.push(item.clone());
+            }
+            if self.if_statement.else_is_active && !self.if_statement.exp{
+                self.if_statement.else_body.push(item);
+            }
         }
         else { return false }
 
 
 
         if self.statements() || self.compare_to_top("}") {
+            
+
             self.update_line();
-            self.consume();
+            let item = self.consume();
+            if self.if_statement.is_active && !self.if_statement.else_is_active{
+                self.if_statement.body.push(item.clone());
+            }
+            if self.if_statement.else_is_active && !self.if_statement.exp{
+                self.if_statement.else_body.push(item);
+            }
 
             return true;
         }
 
+        
+        
+        
         self.end_process();
 
         false
@@ -465,7 +526,14 @@ impl<'a> Parser<'_>{
         let assign_to;
         if self.identifier(){
             self.update_line();
-            assign_to = self.consume().get_value();
+            assign_to = self.consume();
+            if self.if_statement.is_active && !self.if_statement.else_is_active{
+                self.if_statement.body.push(assign_to.clone());
+            }
+            
+            if self.if_statement.else_is_active && !self.if_statement.exp{
+                self.if_statement.else_body.push(assign_to.clone());
+            }
 
         } else { return false }
 
@@ -473,7 +541,13 @@ impl<'a> Parser<'_>{
 
         if self.compare_to_top("="){
             self.update_line();
-            self.consume();
+            let item  = self.consume();
+            if self.if_statement.is_active && !self.if_statement.else_is_active{
+                self.if_statement.body.push(item.clone());
+            }
+            if self.if_statement.else_is_active && !self.if_statement.exp{
+                self.if_statement.else_body.push(item);
+            }
         } else { self.end_process(); return false }
 
 
@@ -484,28 +558,24 @@ impl<'a> Parser<'_>{
             
 
 
-            if self.active_if && self.if_flag && !self.else_flag{
-                self.run_assigment(assign_to);
-            }
-            else if self.active_if && !self.if_flag && !self.else_flag{
+            if self.if_statement.is_active || self.if_statement.else_is_active{
                 self.clear_expression();
-            }
-            else if self.active_if && self.if_flag && self.else_flag{
-                self.clear_expression();
-            }
-            else if self.active_if && self.else_flag{
-                self.run_assigment(assign_to);
             }
             else{
-                self.run_assigment(assign_to);
+                self.run_assigment(assign_to.get_value());
             }
-            
             
 
             
             
             self.update_line();
-            self.consume();
+            let item = self.consume();
+            if self.if_statement.is_active && !self.if_statement.else_is_active{
+                self.if_statement.body.push(item.clone());
+            }
+            if self.if_statement.else_is_active && !self.if_statement.exp{
+                self.if_statement.else_body.push(item)
+            }
             return true
         }
 
@@ -523,27 +593,181 @@ impl<'a> Parser<'_>{
 
         if self.compare_to_top("if"){
             self.update_line();
-            self.consume();
+            let item = self.consume();
+            if self.if_statement.is_active && !self.if_statement.else_is_active{
+                self.if_statement.body.push(item.clone());
+            }
+            if self.if_statement.else_is_active && !self.if_statement.exp{
+                self.if_statement.else_body.push(item)
+            }
         } else { return false }
 
-        self.active_if = true;
 
         if self.compare_to_top("("){
             self.update_line();
-            self.consume();
+            let item = self.consume();
+            if self.if_statement.is_active && !self.if_statement.else_is_active{
+                self.if_statement.body.push(item.clone());
+            }
+            if self.if_statement.else_is_active && !self.if_statement.exp{
+                self.if_statement.else_body.push(item)
+            }
         }else { self.end_process(); return false; }
 
         if self.expression() && self.compare_to_top(")"){
             self.update_line();
-            self.consume();
+            let item  = self.consume();
+            if self.if_statement.is_active && !self.if_statement.else_is_active{
+                self.if_statement.body.push(item.clone());
+            }
+            if self.if_statement.else_is_active  && !self.if_statement.exp{
+                self.if_statement.else_body.push(item)
+            }
+            if !self.if_statement.is_active{
+                match self.eval_expression(){
+                    Ok(result) => {
+                        if let Boolean(exp_result) = result{
+                            self.if_statement.exp = exp_result;
+                        }
+                        else{
+                            eprintln!("Expected boolean expression");
+                            self.end_process();
+                        }
+                    },
+                    Err(error) =>{
+                        eprintln!("{error}");
+                        self.end_process();
+                    }
+                }
+            }
+            else{
+                self.clear_expression();
+            }
+            
+
+            
+
+        } else { self.end_process(); return false }
+        
+        if !self.if_statement.is_active{
+            
+            println!("\nmain body");
+            for token in &self.file_tokens{
+                print!("{} ",token.get_value());
+            }
+
+            self.if_statement.is_active = true;
+            println!("if: {:?}",self.if_statement.exp);
+            if self.statement(){
+    
+                
+                if self.compare_to_top("else"){
+                    if !self.if_statement.else_is_active{
+                        self.if_statement.else_is_active = true;
+                        self.update_line();
+                        self.consume();
+                        self.statement();
+                    }
+                    else{
+                        return true;
+                    }
+
+                }
+               
+               self.execute_if_body();
+                
+                return true;
+            }
+        }
+        else{
+            return true;
+        }
+        self.end_process();
+
+
+
+        false
+    }
+
+
+    pub fn execute_if_body(&mut self){
+
+       
+
+        if self.if_statement.exp{
+            let mut aux_vector = self.if_statement.body.clone();
+            aux_vector.append(&mut self.file_tokens);
+            self.file_tokens = aux_vector;
+        }
+        else{
+            self.execute_else_body();
+        }
+
+        
+        
+
+        self.if_statement.body.clear();
+        self.if_statement.exp = false;
+        self.if_statement.is_active = false;
+        self.if_statement.else_body.clear();
+        self.if_statement.else_is_active = false;
+    }
+
+    pub fn execute_else_body(&mut self){
+        if !self.if_statement.exp{
+            let mut aux_vector = self.if_statement.else_body.clone();
+            aux_vector.append(&mut self.file_tokens);
+            self.file_tokens = aux_vector;
+        }
+
+        self.if_statement.else_body.clear();
+        self.if_statement.else_is_active = false;
+        self.if_statement.body.clear();
+        self.if_statement.exp = false;
+        self.if_statement.is_active = false;
+
+    }
+
+
+    pub fn while_statement(&mut self) -> bool {
+        //Verifica si es un While
+        //Formato EBNF <WhileStatement> ::= while (<Expression>) <Statement>
+
+        if self.compare_to_top("while"){
+            self.update_line();
+            let item = self.consume();
+            if self.if_statement.is_active && !self.if_statement.else_is_active{
+                self.if_statement.body.push(item.clone());
+            }
+            if self.if_statement.else_is_active && !self.if_statement.exp{
+                self.if_statement.else_body.push(item);
+            }
+        } else { return false }
+
+
+        if self.compare_to_top("("){
+            self.update_line();
+            let item = self.consume();
+            if self.if_statement.is_active && !self.if_statement.else_is_active{
+                self.if_statement.body.push(item.clone());
+            }
+            if self.if_statement.else_is_active && !self.if_statement.exp{
+                self.if_statement.else_body.push(item);
+            }
+        } else { self.end_process(); return false }
+
+        if self.expression() && self.compare_to_top(")"){
+            self.update_line();
+            let item = self.consume();
+            if self.if_statement.is_active && !self.if_statement.else_is_active{
+                self.if_statement.body.push(item.clone());
+            }
+            if self.if_statement.else_is_active && !self.if_statement.exp{
+                self.if_statement.else_body.push(item);
+            }
             match self.eval_expression(){
                 Ok(result) => {
-                    if let Boolean(value) = result{
-                        if value{
-                            self.if_flag = true;
-                        }
-                        
-                    }
+                    if let Boolean(_) = result{}
                     else{
                         eprintln!("Expected boolean expression");
                         self.end_process();
@@ -555,55 +779,6 @@ impl<'a> Parser<'_>{
                 }
             }
 
-            
-
-        } else { self.end_process(); return false }
-        
-        if self.statement(){
-            if self.compare_to_top("else"){
-                self.else_flag = true;
-                
-                self.update_line();
-                self.consume();
-                if self.statement(){
-                    self.active_if = false;
-                    self.else_flag = false; 
-                    return true 
-                }
-                self.end_process();
-            }
-            
-            self.active_if = false;
-            self.if_flag = false;
-            return true;
-        }
-
-        self.end_process();
-
-
-
-        false
-    }
-
-
-    pub fn while_statement(&mut self) -> bool {
-        //Verifica si es un While
-        //Formato EBNF <WhileStatement> ::= while (<Expression>) <Statement>
-
-        if self.compare_to_top("while"){
-            self.update_line();
-            self.consume();
-        } else { return false }
-
-
-        if self.compare_to_top("("){
-            self.update_line();
-            self.consume();
-        } else { self.end_process(); return false }
-
-        if self.expression() && self.compare_to_top(")"){
-            self.update_line();
-            self.consume();
         } else { self.end_process(); return false }
 
         if self.statement(){
